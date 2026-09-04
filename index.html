@@ -3,6 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A free Hell Let Loose mortar calculator. Quickly calculate bearing and elevation for accurate mortar shots.">
+    <meta property="og:title" content="HLL Mortar Calculator">
+    <meta property="og:description" content="A free Hell Let Loose mortar calculator. Quickly calculate bearing and elevation for accurate artillery shots.">
+    <meta property="og:url" content="https://www.hllmortar.com">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://www.hllmortar.com/preview.png">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://www.hllmortar.com">
     <title>HLLV MORTAR CALCULATOR</title>
     <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Black+Ops+One&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -87,6 +95,11 @@
         <div>Enter a distance manually.</div>
         <div class="tooltip-close" id="tooltip2Close">✓</div>
     </div> -->
+    <!-- Add this inside .history-paper, near the top -->
+    <button class="close-history-btn" id="closeHistoryBtn" aria-label="Close History">✕</button>
+
+    <!-- Add this anywhere inside <body> -->
+    <button class="history-toggle-btn" id="historyToggleBtn" aria-label="Show Shot History">📋</button>
     <script>
         // Data points sorted by Range (Descending)
         const data = [
@@ -124,7 +137,7 @@
 
         // Approved subtitle sayings, cycled at random
         const sayings = [
-            'GI HO HOME',
+            'GI GO HOME',
             'HORY MORY',
             'SKYDRAGON!',
             'HOTDOG 7',
@@ -509,6 +522,18 @@
             ctx.beginPath();
             ctx.arc(peakX, peakY, 5, 0, Math.PI * 2);
             ctx.fill();
+        }
+        const historyToggleBtn = document.getElementById('historyToggleBtn');
+        const closeHistoryBtn = document.getElementById('closeHistoryBtn');
+
+        if (historyToggleBtn && closeHistoryBtn) {
+            historyToggleBtn.addEventListener('click', () => {
+                historyPanel.classList.add('mobile-open');
+            });
+
+            closeHistoryBtn.addEventListener('click', () => {
+                historyPanel.classList.remove('mobile-open');
+            });
         }
     </script>
 </body>
