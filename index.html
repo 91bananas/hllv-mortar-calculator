@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HLLV MORTAR CALCULATOR</title>
+    <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Black+Ops+One&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="ad-banner">Advertisement</div>
+    <!-- <button id="helpBtn" class="help-btn" type="button" aria-label="Show help tour">?</button> -->
+    <!-- Main Wrapper -->
+    <div class="main-wrapper">
+        <!-- Slide-out Table Panel (Drawer) -->
+        <div class="table-panel open" id="tablePanel">
+            <div class="pad-paper">
+                <h3>Firing Table</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Angle</th>
+                            <th>Range</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                    </tbody>
+                </table>
+            </div>
+            <div class="slider-container">
+                <div class="slider-label">RANGE SLIDER</div>
+                <input type="range" class="vertical-slider" id="rangeSlider" min="100" max="450" value="275" step="1">
+            </div>
+        </div>
+
+        <!-- Main Container -->
+        <div class="container">
+            <div class="rivet tl"></div>
+            <div class="rivet tr"></div>
+            <div class="rivet bl"></div>
+            <div class="rivet br"></div>
+
+            <span class="stencil-mark top-right">81MM</span>
+            <span class="stencil-mark bottom-left">MORTAR</span>
+
+            <h2>HLLV Mortar Calculator</h2>
+            <div class="subtitle" id="subtitle">GI GO HOME</div>
+
+            <input type="number" id="rangeInput" placeholder="Enter range in meters..." min="100" max="450">
+
+            <div class="result" id="angleResult">ELEVATION: --°</div>
+
+            <div class="shot-actions">
+                <button type="button" id="hitBtn" class="shot-btn hit-btn">HIT</button>
+                <button type="button" id="missBtn" class="shot-btn miss-btn">MISS</button>
+            </div>
+
+            <canvas id="trajectoryCanvas" width="560" height="300"></canvas>
+
+            <div class="info">
+                <strong>CLASSIFICATION:</strong>Linear ballistic firing calculator.<br>
+                <strong>AVG SLOPE:</strong> -0.145° per meter. Interpolation used for intermediate values.
+            </div>
+        </div>
+
+        <!-- Shot History Panel -->
+        <div class="history-panel" id="historyPanel">
+            <div class="pad-paper history-paper">
+                <h3>Shot History</h3>
+                <div class="history-scroll" id="historyScroll">
+                    <div class="history-empty" id="historyEmpty">No shots logged yet.</div>
+                </div>
+                <button type="button" id="clearHistoryBtn" class="clear-history-btn">Clear History</button>
+            </div>
+        </div>
+    </div>
+    <!-- Tooltip 1: Slider
+    <div class="tour-tooltip arrow-left" id="tooltip1">
+        <div class="tooltip-title">Quick Adjust</div>
+        <div>Drag this to set a distance.</div>
+        <div class="tooltip-close" id="tooltip1Close">✓</div>
+    </div>
+
+    <div class="tour-tooltip arrow-top" id="tooltip2">
+        <div class="tooltip-title">Manual Input</div>
+        <div>Enter a distance manually.</div>
+        <div class="tooltip-close" id="tooltip2Close">✓</div>
+    </div> -->
+    <script>
+        // Data points sorted by Range (Descending)
+        const data = [
+            { range: 450, angle: 0 },
+            { range: 425, angle: 6 },
+            { range: 400, angle: 12 },
+            { range: 375, angle: 18 },
+            { range: 350, angle: 24 },
+            { range: 300, angle: 30 },
+            { range: 275, angle: 36 },
+            { range: 250, angle: 43 },
+            { range: 225, angle: 49 },
+            { range: 200, angle: 55 },
+            { range: 175, angle: 67 },
+            { range: 150, angle: 73 },
+            { range: 125, angle: 79 },
+            { range: 100, angle: 85 }
+        ];
+
+        const rangeInput = document.getElementById('rangeInput');
+        const angleResult = document.getElementById('angleResult');
+        const canvas = document.getElementById('trajectoryCanvas');
+        const ctx = canvas.getContext('2d');
+        const tablePanel = document.getElementById('tablePanel');
+        const tableBody = document.getElementById('tableBody');
+        const rangeSlider = document.getElementById('rangeSlider');
+        const sliderContainer = document.querySelector('.slider-container');
+        const padPaper = document.querySelector('.pad-paper');
+        const hitBtn = document.getElementById('hitBtn');
+        const missBtn = document.getElementById('missBtn');
+        const historyScroll = document.getElementById('historyScroll');
+        const historyEmpty = document.getElementById('historyEmpty');
+        const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+        const subtitle = document.getElementById('subtitle');
+
+        // Approved subtitle sayings, cycled at random
+        const sayings = [
+            'GI HO HOME',
+            'HORY MORY',
+            'SKYDRAGON!',
+            'HOTDOG 7',
+            'BUBBA?',
+            'SOMETHING BIT ME!',
+            'GET DOWN! SHUT UP!',
+            'DONT MEAN NOTHIN'
+        ];
+
+        function cycleSaying() {
+            let next;
+            do {
+                next = sayings[Math.floor(Math.random() * sayings.length)];
+            } while (next === subtitle.textContent && sayings.length > 1);
+            subtitle.textContent = next;
+        }
+
+        // Current firing solution (used when logging shots)
+        let currentRange = null;
+        let currentAngle = null;
+
+        // Persisted shot history
+        const HISTORY_KEY = 'hllv-shot-history';
+        let shots = loadHistory();
+        // const helpBtn = document.getElementById('helpBtn');
+        const tooltip1 = document.getElementById('tooltip1');
+        const tooltip2 = document.getElementById('tooltip2');
+        const tooltip1Close = document.getElementById('tooltip1Close');
+        const tooltip2Close = document.getElementById('tooltip2Close');
+
+        // Populate the firing table
+        data.forEach(item => {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${item.angle}°</td><td>${item.range}m</td>`;
+            tableBody.appendChild(row);
+        });
+
+        // Adjust slider height to match table height
+        function adjustSliderHeight() {
+            const tableHeight = padPaper.offsetHeight;
+            const sliderInput = document.querySelector('.vertical-slider');
+            sliderInput.style.height = (tableHeight - 125) + 'px';
+        }
+
+        // // Tour system
+        // let currentTourStep = 0;
+
+        // // Anchor a tooltip to a target element using fixed positioning.
+        // function positionTooltip(tooltip, target, placement) {
+        //     const rect = target.getBoundingClientRect();
+        //     tooltip.style.position = 'fixed';
+        //     tooltip.style.margin = '0';
+
+        //     if (placement === 'right') {
+        //         tooltip.style.left = (rect.right + 18) + 'px';
+        //         tooltip.style.top = (rect.top + rect.height / 2) + 'px';
+        //         tooltip.style.transform = 'translateY(-50%)';
+        //     } else if (placement === 'bottom') {
+        //         tooltip.style.left = (rect.left + rect.width / 2) + 'px';
+        //         tooltip.style.top = (rect.bottom + 18) + 'px';
+        //         tooltip.style.transform = 'translateX(-50%)';
+        //     }
+        // }
+
+        // function repositionActiveTooltip() {
+        //     if (currentTourStep === 1) {
+        //         positionTooltip(tooltip1, rangeSlider, 'right');
+        //     } else if (currentTourStep === 2) {
+        //         positionTooltip(tooltip2, rangeInput, 'bottom');
+        //     }
+        // }
+
+        // function setTourStep(step) {
+        //     currentTourStep = step;
+        //     tooltip1.classList.toggle('visible', step === 1);
+        //     tooltip2.classList.toggle('visible', step === 2);
+        //     repositionActiveTooltip();
+        //     window.__tourStep = step;
+        // }
+
+        // function startTour() {
+        //     setTourStep(1);
+        // }
+
+        // function nextTourStep() {
+        //     if (currentTourStep === 0 || currentTourStep === 2) {
+        //         setTourStep(1);
+        //         return;
+        //     }
+
+        //     if (currentTourStep === 1) {
+        //         setTourStep(2);
+        //         return;
+        //     }
+
+        //     setTourStep(0);
+        // }
+
+        // helpBtn.addEventListener('click', (event) => {
+        //     event.preventDefault();
+        //     nextTourStep();
+        // });
+
+        // tooltip1Close.addEventListener('click', () => setTourStep(0));
+        // tooltip2Close.addEventListener('click', () => setTourStep(0));
+
+        // window.addEventListener('scroll', repositionActiveTooltip, true);
+
+        function initializePage() {
+            adjustSliderHeight();
+            rangeInput.dispatchEvent(new Event('input'));
+            cycleSaying();
+            setInterval(cycleSaying, 30_000);
+            // setTimeout(() => {
+            //     startTour();
+            // }, 500);
+        }
+
+        // Adjust on load and window resize
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializePage);
+        } else {
+            initializePage();
+        }
+        window.addEventListener('resize', () => {
+            adjustSliderHeight();
+            // repositionActiveTooltip();
+        });
+
+        // Sync slider with input
+        rangeSlider.addEventListener('input', function() {
+            rangeInput.value = this.value;
+            rangeInput.dispatchEvent(new Event('input'));
+        });
+
+        // Sync input with slider
+        rangeInput.addEventListener('input', function() {
+            const meters = parseFloat(this.value);
+            if (!isNaN(meters) && meters >= 100 && meters <= 450) {
+                rangeSlider.value = meters;
+            }
+
+            if (isNaN(meters)) {
+                angleResult.textContent = "ELEVATION: --°";
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                currentRange = null;
+                currentAngle = null;
+                return;
+            }
+
+            let angle;
+
+            if (meters >= 450) {
+                angle = 0;
+                angleResult.textContent = "ELEVATION: 0° (MAX RANGE)";
+            } else if (meters <= 100) {
+                angle = 85;
+                angleResult.textContent = "ELEVATION: 85° (MIN RANGE)";
+            } else {
+                for (let i = 0; i < data.length - 1; i++) {
+                    if (meters <= data[i].range && meters > data[i+1].range) {
+                        let r1 = data[i].range;
+                        let a1 = data[i].angle;
+                        let r2 = data[i+1].range;
+                        let a2 = data[i+1].angle;
+
+                        let interpolatedAngle = a1 + (meters - r1) * (a2 - a1) / (r2 - r1);
+                        // angle = Math.round(interpolatedAngle);
+                        angle = interpolatedAngle.toFixed(2);
+                        // angle = interpolatedAngle;
+                        angleResult.textContent = `ELEVATION: ${angle}°`;
+                        break;
+                    }
+                }
+            }
+
+            currentRange = meters;
+            currentAngle = angle;
+            drawTrajectory(meters, angle);
+        });
+
+        // Log a shot (HIT or MISS) to the Shot History panel
+        function loadHistory() {
+            try {
+                const raw = localStorage.getItem(HISTORY_KEY);
+                const parsed = raw ? JSON.parse(raw) : [];
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveHistory() {
+            try {
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(shots));
+            } catch (e) {
+                /* storage unavailable; keep in-memory only */
+            }
+        }
+
+        function renderHistory() {
+            historyScroll.querySelectorAll('.history-entry').forEach(el => el.remove());
+            historyEmpty.style.display = shots.length ? 'none' : '';
+
+            shots.forEach((shot, index) => {
+                const entry = document.createElement('div');
+                entry.className = 'history-entry ' + (shot.status === 'HIT' ? 'hit' : 'miss');
+                entry.innerHTML =
+                    '<span class="hist-num">#' + (index + 1) + '</span>' +
+                    '<span class="hist-data">' + shot.range + 'm · ' + shot.angle + '°</span>' +
+                    '<span class="hist-status">' + shot.status + '</span>';
+                historyScroll.appendChild(entry);
+            });
+
+            historyScroll.scrollTop = historyScroll.scrollHeight;
+        }
+
+        function logShot(status) {
+            if (currentRange === null || isNaN(currentRange)) {
+                return;
+            }
+
+            shots.push({
+                range: Math.round(currentRange),
+                angle: currentAngle,
+                status: status
+            });
+            saveHistory();
+            renderHistory();
+        }
+
+        function clearHistory() {
+            if (!shots.length) {
+                return;
+            }
+            if (!window.confirm('Clear all logged shots? This cannot be undone.')) {
+                return;
+            }
+            shots = [];
+            saveHistory();
+            renderHistory();
+        }
+
+        hitBtn.addEventListener('click', () => logShot('HIT'));
+        missBtn.addEventListener('click', () => logShot('MISS'));
+        clearHistoryBtn.addEventListener('click', clearHistory);
+
+        // Restore any saved shots on load
+        renderHistory();
+
+        function drawTrajectory(range, angle) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Military map background
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#c9b896');
+            gradient.addColorStop(0.7, '#b8a580');
+            gradient.addColorStop(0.7, '#8b7355');
+            gradient.addColorStop(1, '#6b5340');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Grid lines (topographic style)
+            ctx.strokeStyle = 'rgba(139, 90, 43, 0.2)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < canvas.width; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, canvas.height);
+                ctx.stroke();
+            }
+            for (let i = 0; i < canvas.height; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(canvas.width, i);
+                ctx.stroke();
+            }
+
+            const groundY = canvas.height * 0.7;
+            const launcherX = 50;
+            const launcherY = groundY;
+
+            const maxRange = 450;
+            const scale = (canvas.width - 100) / maxRange;
+
+            // Draw ground line
+            ctx.strokeStyle = '#4a3520';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, groundY);
+            ctx.lineTo(canvas.width, groundY);
+            ctx.stroke();
+
+            // Draw launcher (cannon)
+            ctx.fillStyle = '#2c3e20';
+            ctx.fillRect(launcherX - 12, launcherY - 22, 24, 22);
+            ctx.beginPath();
+            ctx.arc(launcherX, launcherY - 22, 12, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Calculate trajectory points
+            const angleRad = angle * Math.PI / 180;
+            const targetX = launcherX + range * scale;
+
+            const peakHeight = Math.sin(angleRad) * range * scale * 0.4;
+            const peakX = launcherX + (range * scale) / 2;
+            const peakY = groundY - peakHeight;
+
+            // Draw initial angle line
+            ctx.strokeStyle = '#8b0000';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            ctx.moveTo(launcherX, launcherY);
+            const lineLength = 80;
+            ctx.lineTo(
+                launcherX + lineLength * Math.cos(angleRad),
+                launcherY - lineLength * Math.sin(angleRad)
+            );
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw angle arc
+            ctx.strokeStyle = '#8b0000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(launcherX, launcherY, 30, -angleRad, 0);
+            ctx.stroke();
+
+            // Draw angle label
+            ctx.fillStyle = '#8b0000';
+            ctx.font = 'bold 18px "Special Elite", monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(`${angle}°`, launcherX + 15, launcherY + 20);
+
+            // Draw trajectory arc
+            ctx.strokeStyle = '#1a3a5c';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(launcherX, launcherY);
+            ctx.quadraticCurveTo(peakX, peakY, targetX, groundY);
+            ctx.stroke();
+
+            // Draw target marker
+            ctx.fillStyle = '#2d5016';
+            ctx.beginPath();
+            ctx.moveTo(targetX, groundY);
+            ctx.lineTo(targetX - 8, groundY - 15);
+            ctx.lineTo(targetX + 8, groundY - 15);
+            ctx.closePath();
+            ctx.fill();
+
+            // Draw target flag
+            ctx.strokeStyle = '#2d5016';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(targetX, groundY - 15);
+            ctx.lineTo(targetX, groundY - 35);
+            ctx.stroke();
+
+            ctx.fillStyle = '#2d5016';
+            ctx.fillRect(targetX, groundY - 35, 15, 10);
+
+            // Draw range label
+            ctx.fillStyle = '#2d3a1f';
+            ctx.font = 'bold 18px "Special Elite", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${range}m`, targetX, groundY + 20);
+
+            // Draw peak height indicator
+            ctx.strokeStyle = 'rgba(139, 90, 43, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(peakX, groundY);
+            ctx.lineTo(peakX, peakY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw projectile at peak
+            ctx.fillStyle = '#1a2410';
+            ctx.beginPath();
+            ctx.arc(peakX, peakY, 5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    </script>
+</body>
+</html>
